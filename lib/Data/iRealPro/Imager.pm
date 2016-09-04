@@ -5,8 +5,8 @@
 # Author          : Johan Vromans
 # Created On      : Fri Jan 15 19:15:00 2016
 # Last Modified By: Johan Vromans
-# Last Modified On: Sat Sep  3 21:57:25 2016
-# Update Count    : 1275
+# Last Modified On: Sun Sep  4 20:58:00 2016
+# Update Count    : 1313
 # Status          : Unknown, Use with caution!
 
 ################ Common stuff ################
@@ -454,6 +454,10 @@ my %smufl =
 my $numrows = 16;
 my $numcols = 16;
 
+use constant CHORD_NORMAL      => 0x00;
+use constant CHORD_CONDENSED   => 0x01;
+use constant CHORD_ALTERNATIVE => 0x02;
+
 # Generalized formatter for PDF::API2 and Imager.
 sub make_image {
     # {{{
@@ -754,12 +758,8 @@ sub make_image {
 	    }
 
 	    if ( $self->{npp} ) {
-		if ( $cell->sz ) {
-		    $self->npp_schord( $x, $y, $c );
-		}
-		else {
-		    $self->npp_chord( $x, $y, $c );
-		}
+		$self->npp_chord( $x, $y, $c,
+				  $cell->sz ? CHORD_CONDENSED : CHORD_NORMAL );
 	    }
 	    else {
 		$self->chord( $x+0.15*$musicsize, $y, $c, $musicsize, $font );
@@ -770,7 +770,7 @@ sub make_image {
 	for ( $cell->subchord ) {
 	    next unless $_;
 	    if ( $self->{npp} ) {
-		$self->npp_subchord( $x, $y, $_ );
+		$self->npp_chord( $x, $y, $_, CHORD_ALTERNATIVE );
 	    }
 	    else {
 		$self->chord( $x+0.15*$musicsize, $y-$musicsize,
@@ -1160,60 +1160,46 @@ sub initfonts {
 ################ NPP routines ################
 
 sub npp_chord {
-    my ( $self, $x, $y, $c ) = @_;
+    my ( $self, $x, $y, $c, $flags ) = @_;
     my ( $root, $quality, $bass ) = $self->xchord($c);
 
-    if ( $root eq "nc" ) {
-	$self->{im}->rubthrough( src => $self->getimg("root_$root"),
-				 tx => $x+29, ty => $y+41 );
-    }
-    else {
-	if ( $quality =~ /^\*(.*)\*$/ ) {
-	    $self->textl( $x + 85, $y + 168, $1,
-			  $self->{stitlesize}, $self->{stitlefont} );
-	    $quality = "";
+    # Flags: 0x00   normal
+    #        0x01   condensed
+    #        0x02   alternate
+    #        0x03   condensed, alternate
+    #               condensed alternate is the same as alternate
+
+    if ( $c eq "NC" ) {
+	my $img = $self->getimg("root_nc");
+	$x += 29;
+	$y += 41;
+	if ( $flags & CHORD_CONDENSED ) {
+	    $img = $img->scale( xscalefactor => 0.7, yscalefactor => 1 );
+	    $x -= 31;
 	}
-	$self->{im}->rubthrough( src => $self->chordimg ( $root, $quality, $bass ),
+	if ( $flags & CHORD_ALTERNATIVE ) {
+	    ...;
+	}
+	$self->{im}->rubthrough( src => $img,
 				 tx => $x, ty => $y );
+	return;
     }
-}
 
-sub npp_schord {
-    my ( $self, $x, $y, $c ) = @_;
-    my ( $root, $quality, $bass ) = $self->xchord($c);
-    my $scale = 0.7;
-
-    if ( $root eq "nc" ) {
-	$self->{im}->rubthrough( src => $self->getimg("root_$root")
-				        ->scale( xscalefactor => $scale,
-						 yscalefactor => 1 ),
-				 tx => $x - 2, ty => $y+41 );
+    if ( $c =~ /^(.+)\*(.*)\*(.*)$/ ) {
+	$self->textl( $x + 85, $y + 168, $2,
+		      $self->{stitlesize}, $self->{stitlefont} );
+	$c = $1.$3;
     }
-    else {
-	$self->{im}->rubthrough( src => $self->chordimg ( $root, $quality, $bass )
-				 ->scale( xscalefactor => $scale,
-					  yscalefactor => 1 ),
-				 tx => $x, ty => $y );
-    }
-}
-
-sub npp_subchord {
-    my ( $self, $x, $y, $c ) = @_;
-    my ( $root, $quality, $bass ) = $self->xchord($c);
-    my $scale = 0.62;
-
-    if ( $root eq "nc" ) {
-	$self->{im}->rubthrough( src => $self->getimg("root_$root")
-				        ->scale( yscalefactor => $scale,
-						 xscalefactor => $scale ),
-				 tx => $x+30, ty => $y+46 );
-    }
-    else {
-	$self->{im}->rubthrough( src => $self->chordimg( $root, $quality, $bass )
-				 ->scale( yscalefactor => $scale,
-					  xscalefactor => $scale ),
+    my $img = $self->chordimg( $c, $flags );
+    if ( $flags & CHORD_ALTERNATIVE ) {
+	$self->{im}->rubthrough( src => $img,
 				 tx => $x + 9, ty => $y - 98 );
     }
+    else {
+	$self->{im}->rubthrough( src => $img, tx => $x, ty => $y );
+	return;
+    }
+
 }
 
 sub xchord {
@@ -1354,10 +1340,11 @@ sub getimg {
 }
 
 sub chordimg {
-    my $self = shift;
-    my ( $root, $quality, $bass ) = map { lc } @_;
+    my ( $self, $chord, $flags ) = @_;
+    my ( $root, $quality, $bass ) = $self->xchord($chord);
 
-    my $img = join("|", "", $root, $quality||"", $bass||"", "");
+    my $img = join( "|", "", $root, $quality||"", $bass||"",
+		         sprintf("%d", $flags), "" );
     return $npp_imgcache{$img} if $npp_imgcache{$img};
 
     my $im = Imager->new( xsize => 218,
@@ -1369,28 +1356,40 @@ sub chordimg {
     ( $root, $acc ) = ( $1, $2 ) if $root =~ /^([a-gw])([b#x])$/;
     $acc = $acc eq 'b' ? "flat" : "sharp" if $acc;
 
+    my $dx = $flags & CHORD_ALTERNATIVE ? 6 : 0;
+    my $dy = $flags & CHORD_ALTERNATIVE ? -6 : 0;
     $im->rubthrough( src => $self->getimg("root_$root"),
 		     tx => 0, ty => 0 );
     $im->rubthrough( src => $self->getimg("root_$acc"),
 		     tx => 0, ty => 0 ) if $acc;
     $im->rubthrough( src => $self->getimg("quality_$quality"),
-		     tx => 84, ty => 80 ) if $quality;
+		     tx => 84, ty => $dy+80 ) if $quality;
 
-    return $npp_imgcache{$img} = $im unless $bass;
+    if ( $bass ) {
 
-    ( $root, $acc ) = $bass =~ /^([a-g])([b#x]?)$/;
-    $acc = $acc eq 'b' ? "flat" : "sharp" if $acc;
+	( $root, $acc ) = $bass =~ /^([a-g])([b#x]?)$/;
+	$acc = $acc eq 'b' ? "flat" : "sharp" if $acc;
 
-    $im->rubthrough( src => $self->getimg("root_$root")
-		                   ->scale( scalefactor => 0.65 ),
-		     tx => 65, ty => 153 );
-    $im->rubthrough( src => $self->getimg("root_$acc")
-		                   ->scale( scalefactor => 0.65 ),
-		     tx => 65, ty => 177 ) if $acc;
-    $im->rubthrough( src => $self->getimg("root_slash")
-		                   ->scale( xscalefactor => 0.85,
-					    yscalefactor => 0.55 ),
-		     tx => 0, ty => 142 );
+	$dx = $flags & CHORD_CONDENSED ? 10 : 0;
+	$dx += 50 if $flags & CHORD_ALTERNATIVE;
+	$dy = $flags & CHORD_CONDENSED ? -5 : 0;
+	$dy -= 5 if $flags & CHORD_ALTERNATIVE;
+	my $sc = $flags & CHORD_CONDENSED ? 0.68 : 0.65;
+	my $sc2 = $flags & CHORD_CONDENSED ? 0.58 : 0.55;
+	$im->rubthrough( src => $self->getimg("root_$root")
+			 ->scale( scalefactor => $sc ),
+			 tx => $dx+65, ty => $dy+153 );
+	$im->rubthrough( src => $self->getimg("root_$acc")
+			 ->scale( scalefactor => $sc ),
+			 tx => $dx+65, ty => $dy+177 ) if $acc;
+	$im->rubthrough( src => $self->getimg("root_slash")
+			 ->scale( xscalefactor => 0.85,
+				  yscalefactor => $sc2 ),
+			 tx => $dx+0, ty => 142 );
+    }
+
+    $im = $im->scale( xscalefactor => 0.7, yscalefactor => 1 ) if $flags & CHORD_CONDENSED;
+    $im = $im->scale( xscalefactor => 0.62, yscalefactor => 0.62 ) if $flags & CHORD_ALTERNATIVE;
 
     return $npp_imgcache{$img} = $im;
 }
