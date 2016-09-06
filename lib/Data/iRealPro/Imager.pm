@@ -5,8 +5,8 @@
 # Author          : Johan Vromans
 # Created On      : Fri Jan 15 19:15:00 2016
 # Last Modified By: Johan Vromans
-# Last Modified On: Sun Sep  4 20:58:00 2016
-# Update Count    : 1313
+# Last Modified On: Tue Sep  6 12:17:12 2016
+# Update Count    : 1316
 # Status          : Unknown, Use with caution!
 
 ################ Common stuff ################
@@ -30,8 +30,17 @@ use constant FONTSX => 0;
 
 sub new {
     my ( $pkg, $options ) = @_;
-    $options->{npp} = 'hand';
-    $options->{npp_minor} = 'm'; # or empty
+
+    if ( $options->{npp} ) {
+	if ( $options->{npp} =~ s/-$// ) {
+	    $options->{npp_minor} = '';
+	}
+	else {
+	    $options->{npp_minor} = 'm';
+	}
+	$options->{npp} = 'straight' unless $options->{npp} eq 'hand';
+    }
+
     my $self = bless( { variant => "irealpro" }, $pkg );
 
     for ( qw( trace debug verbose output variant transpose toc crop
