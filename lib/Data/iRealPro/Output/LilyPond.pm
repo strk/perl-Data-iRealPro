@@ -11,11 +11,12 @@ use parent qw( Data::iRealPro::Output::Base );
 
 use Data::iRealPro::URI;
 use Data::Dumper;
+our $VERSION;
 
 sub new {
-    my ( $pkg, %args ) = @_;
+    my ( $pkg, @options ) = @_;
     Carp::croak(__PACKAGE__ . " is not yet functional!");
-    bless { variant => "irealpro", %args }, $pkg;
+    bless { variant => "irealpro" }, $pkg;
 }
 
 sub decode_playlist {		# or single song

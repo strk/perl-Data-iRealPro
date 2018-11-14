@@ -46,6 +46,10 @@ sub new {
 	require Data::iRealPro::Output::JSON;
 	$self->{_backend} = Data::iRealPro::Output::JSON::;
     }
+    elsif ( $opts->{output} =~ /\.ly$/i ) {
+	require Data::iRealPro::Output::LilyPond;
+	$self->{_backend} = Data::iRealPro::Output::LilyPond::;
+    }
     elsif ( $options->{split}
 	    || $opts->{output} =~ /\.html$/i ) {
 	require Data::iRealPro::Output::HTML;
